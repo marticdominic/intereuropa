@@ -159,17 +159,14 @@ def izracunaj_ugovornu_cijenu(row):
 
 
 def izracunaj_radne_dane(row):
-  # Pretpostavljamo stupce 'Odlazak' (datum preuzimanja) i 'Dostava' (datum isporuke)
   try:
     dt_odlazak = pd.to_datetime(row.get("Odlazak"))
     dt_dostava = pd.to_datetime(row.get("Dostava"))
     if pd.isna(dt_odlazak) or pd.isna(dt_dostava):
       return None
-    # Izračun radnih dana (isključuje subotu i nedjelju)
     radni_dani = pd.bdate_range(
         start=dt_odlazak.normalize(), end=dt_dostava.normalize()
     )
-    # Broj dana isporuke (uključujući dan dostave, minus 1 ako je isti dan, ili radni dani)
     broj_dana = max(0, len(radni_dani) - 1)
     return int(broj_dana)
   except:
@@ -198,10 +195,9 @@ if df is not None:
       zone_idx = odredi_zonu(pb)
       is_island_or_south = pb.startswith("20")
 
-      # Ugovoreni rok u radnim danima: Zona 1 i 2 = 2 radna dana (48h), Otoci/20xxx/Zona 3 = 3 radna dana (72h)
       dozvoljeno_dana = 3 if (is_island_or_south or zone_idx == 2) else 2
 
-      st st_dani = row.get("Radni_Dani_Isporuke")
+      st_dani = row.get("Radni_Dani_Isporuke")
       if pd.isna(st_dani):
         return "Nepoznato"
       if st_dani <= dozvoljeno_dana:
@@ -227,7 +223,9 @@ if df is not None:
 
   col1.metric("Ukupno naplaćeno (bez PDV)", f"{total_neto:,.2f} EUR")
   col2.metric("Procjena po cjeniku", f"{total_ugovor:,.2f} EUR")
-  col3.metric("Uočeno preplaćeno", f"{total_razlika:,.2f} EUR", delta_color="inverse")
+  col3.metric(
+      "Uočeno preplaćeno", f"{total_razlika:,.2f} EUR", delta_color="inverse"
+  )
   col4.metric(
       "Pošiljke s kašnjenjem", f"{kasnjenja_count}", delta_color="inverse"
   )
@@ -269,68 +267,4 @@ if df is not None:
 
   # Vizualizacije
   st.subheader("📊 Vizualna analiza troškova i rokova")
-  c1, c2 = st.columns(2)
-
-  with c1:
-    st.markdown("**Troškovi po vrsti usluge**")
-    if "Usluga-naziv" in df.columns:
-      usluga_grp = (
-          df.groupby("Usluga-naziv")["Iznos (bezPDV)"].sum().reset_index()
-      )
-      fig1 = px.pie(
-          usluga_grp,
-          names="Usluga-naziv",
-          values="Iznos (bezPDV)",
-          hole=0.4,
-      )
-      st.plotly_chart(fig1, use_container_width=True)
-
-  with c2:
-    st.markdown("**Točnost rokova isporuke (SLA status)**")
-    if "Status_SLA" in df.columns:
-      sla_grp = df["Status_SLA"].value_counts().reset_index()
-      sla_grp.columns = ["Status", "Broj"]
-      fig2 = px.bar(
-          sla_grp,
-          x="Status",
-          y="Broj",
-          color="Status",
-          labels={"Status": "SLA Status", "Broj": "Broj pošiljaka"},
-      )
-      st.plotly_chart(fig2, use_container_width=True)
-
-  # Detaljna tablica revizije
-  st.subheader(
-      "📋 Detaljna tablica revizije cijena i točnosti rokova isporuke"
-  )
-  prikaz_stupaca = [
-      "Br.rač.",
-      "Dat.rač.",
-      "Usluga-naziv",
-      "Prim-mjesto",
-      "Prim.-pošt.br.",
-      "Vred.osn./količ.",
-      "JM",
-      "Iznos (bezPDV)",
-      "Ugovorna_Cijena",
-      "Razlika_Preplaceno",
-  ]
-  if "Radni_Dani_Isporuke" in df.columns:
-    prikaz_stupaca.extend(["Radni_Dani_Isporuke", "Status_SLA"])
-
-  st.dataframe(filtered_df[prikaz_stupaca], use_container_width=True)
-
-  # Export u pravi Excel format (.xlsx)
-  output = io.BytesIO()
-  with pd.ExcelWriter(output, engine="openpyxl") as writer:
-    filtered_df.to_excel(writer, index=False, sheet_name="Revizija_i_Rokovi")
-  excel_data = output.getvalue()
-
-  st.download_button(
-      label="📥 Preuzmi izvještaj revizije i rokova (Excel)",
-      data=excel_data,
-      file_name="intereuropa_revizija_cijena_i_rokova.xlsx",
-      mime=(
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-      ),
-  )
+  c1, c2 = st.columns(
