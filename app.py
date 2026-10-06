@@ -287,4 +287,9 @@ if df is not None:
 
   st.download_button(
       label="📥 Preuzmi izvještaj revizije (Excel)",
-      data=
+      data=excel_data,
+      file_name="intereuropa_revizija_izvjestaj.xlsx",
+      mime=(
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      ),
+  )
