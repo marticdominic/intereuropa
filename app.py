@@ -4,17 +4,17 @@ import plotly.express as px
 import streamlit as st
 
 st.set_page_config(
-    page_title="Intereuropa - Revizija i Analiza Računa",
+    page_title="Intereuropa - Revizija i Analiza Računa i Rokova",
     page_icon="📦",
     layout="wide",
 )
 
 st.title(
-    "📦 Intereuropa: Automatska Revizija i Usporedba Računa s Ugovornim Cijenama"
+    "📦 Intereuropa: Revizija Cijena i Kontrola Rokova Isporuke (SLA)"
 )
 st.write(
-    "Napredna kontrola troškova prijevoza, dodataka za gorivo i paleta prema"
-    " službenom ugovornom cjeniku."
+    "Napredna kontrola troškova, ugovornih cijena i točnosti rokova isporuke"
+    " prema zonama."
 )
 
 # Sidebar za upload
@@ -45,7 +45,6 @@ else:
 
 
 # Definicija ugovornih cjenika po zonama
-# Paketi (Expressne i cargo pošiljke)
 package_prices = {
     2: (3.37, 4.45, 6.13),
     5: (3.83, 5.06, 7.05),
@@ -73,7 +72,6 @@ package_prices = {
 }
 package_extra_100 = (10.45, 13.78, 17.42)
 
-# Palete (Euro paletne pošiljke)
 pallet_prices = {
     200: (23.01, 30.71, 36.46),
     250: (26.01, 34.60, 41.41),
@@ -93,14 +91,12 @@ def odredi_zonu(postanski_broj):
     pb = int(postanski_broj)
   except:
     return 1
-  # Zona 1: Zagreb i okolica (10xxx)
   if 10000 <= pb <= 10450:
-    return 0  # Index 0 za Zonu 1
-  # Zona 3: Izrazito udaljena mjesta
+    return 0  # Zona 1
   elif pb in [53200, 20260, 20290]:
-    return 2  # Index 2 za Zonu 3
+    return 2  # Zona 3
   else:
-    return 1  # Index 1 za Zonu 2 (veći gradovi)
+    return 1  # Zona 2
 
 
 def izracunaj_ugovornu_cijenu(row):
@@ -113,8 +109,6 @@ def izracunaj_ugovornu_cijenu(row):
 
   pb = row.get("Prim.-pošt.br.", 10000)
   zone_idx = odredi_zonu(pb)
-
-  # Provjera otoka / južne destinacije (ZIP počinje s 20 -> +50% na Zonu 2)
   is_island_or_south = str(pb).startswith("20")
 
   cijena = 0.0
@@ -131,9 +125,7 @@ def izracunaj_ugovornu_cijenu(row):
           break
       if tezina > thresholds[-1]:
         base_price = package_prices[700][zone_idx]
-        extra_blocks = max(
-            0.0, ((tezina - 700) + 99.99) // 100
-        )  # za svaka započeta 100kg
+        extra_blocks = max(0.0, ((tezina - 700) + 99.99) // 100)
         cijena = base_price + extra_blocks * package_extra_100[zone_idx]
     if cijena == 0.0:
       cijena = package_prices[t][zone_idx]
@@ -148,27 +140,44 @@ def izracunaj_ugovornu_cijenu(row):
         if tezina <= th:
           t = th
           break
-      if tezina > thresholds[-1]:
-        base_price = pallet_prices[700][zone_idx]
-        extra_blocks = max(0.0, ((tezina - 700) + 99.99) // 100)
-        cijena = base_price + extra_blocks * pallet_extra_100[zone_idx]
+        if tezina > thresholds[-1]:
+          base_price = pallet_prices[700][zone_idx]
+          extra_blocks = max(0.0, ((tezina - 700) + 99.99) // 100)
+          cijena = base_price + extra_blocks * pallet_extra_100[zone_idx]
     if cijena == 0.0:
       cijena = pallet_prices[t][zone_idx]
 
   elif "VRAĆANJE PALET" in usluga:
-    cijena = 2.00  # Ugovorena cijena povrata palete
-
+    cijena = 2.00
   elif "GORIVO" in usluga:
     cijena = 0.0
 
   if is_island_or_south and zone_idx == 1:
-    cijena = cijena * 1.5  # +50% za otoke/Dubrovačku regiju
+    cijena = cijena * 1.5
 
   return round(cijena, 2)
 
 
+def izracunaj_radne_dane(row):
+  # Pretpostavljamo stupce 'Odlazak' (datum preuzimanja) i 'Dostava' (datum isporuke)
+  try:
+    dt_odlazak = pd.to_datetime(row.get("Odlazak"))
+    dt_dostava = pd.to_datetime(row.get("Dostava"))
+    if pd.isna(dt_odlazak) or pd.isna(dt_dostava):
+      return None
+    # Izračun radnih dana (isključuje subotu i nedjelju)
+    radni_dani = pd.bdate_range(
+        start=dt_odlazak.normalize(), end=dt_dostava.normalize()
+    )
+    # Broj dana isporuke (uključujući dan dostave, minus 1 ako je isti dan, ili radni dani)
+    broj_dana = max(0, len(radni_dani) - 1)
+    return int(broj_dana)
+  except:
+    return None
+
+
 if df is not None:
-  # Izračun ugovornih cijena i razlika za svaku stavku
+  # Izračun cijena i razlika
   df["Ugovorna_Cijena"] = df.apply(izracunaj_ugovornu_cijenu, axis=1)
   df["Razlika_Preplaceno"] = df.apply(
       lambda r: (
@@ -180,6 +189,28 @@ if df is not None:
       axis=1,
   )
 
+  # Izračun rokova isporuke
+  if "Odlazak" in df.columns and "Dostava" in df.columns:
+    df["Radni_Dani_Isporuke"] = df.apply(izracunaj_radne_dane, axis=1)
+
+    def provjeri_sla(row):
+      pb = str(row.get("Prim.-pošt.br.", ""))
+      zone_idx = odredi_zonu(pb)
+      is_island_or_south = pb.startswith("20")
+
+      # Ugovoreni rok u radnim danima: Zona 1 i 2 = 2 radna dana (48h), Otoci/20xxx/Zona 3 = 3 radna dana (72h)
+      dozvoljeno_dana = 3 if (is_island_or_south or zone_idx == 2) else 2
+
+      st st_dani = row.get("Radni_Dani_Isporuke")
+      if pd.isna(st_dani):
+        return "Nepoznato"
+      if st_dani <= dozvoljeno_dana:
+        return "U roku"
+      else:
+        return "Kašnjenje"
+
+    df["Status_SLA"] = df.apply(provjeri_sla, axis=1)
+
   # Osnovne metrike
   st.markdown("---")
   col1, col2, col3, col4 = st.columns(4)
@@ -187,12 +218,19 @@ if df is not None:
   total_neto = df["Iznos (bezPDV)"].sum()
   total_ugovor = df["Ugovorna_Cijena"].sum()
   total_razlika = df[df["Razlika_Preplaceno"] > 0]["Razlika_Preplaceno"].sum()
-  total_stavki = len(df)
+
+  kasnjenja_count = (
+      len(df[df["Status_SLA"] == "Kašnjenje"])
+      if "Status_SLA" in df.columns
+      else 0
+  )
 
   col1.metric("Ukupno naplaćeno (bez PDV)", f"{total_neto:,.2f} EUR")
   col2.metric("Procjena po cjeniku", f"{total_ugovor:,.2f} EUR")
   col3.metric("Uočeno preplaćeno", f"{total_razlika:,.2f} EUR", delta_color="inverse")
-  col4.metric("Ukupno stavki", f"{total_stavki}")
+  col4.metric(
+      "Pošiljke s kašnjenjem", f"{kasnjenja_count}", delta_color="inverse"
+  )
 
   st.markdown("---")
 
@@ -215,6 +253,9 @@ if df is not None:
   samo_preplaceno = st.sidebar.checkbox(
       "Prikaži samo sumnjive / preplaćene stavke"
   )
+  samo_kasnjenje = st.sidebar.checkbox(
+      "Prikaži samo pošiljke s kašnjenjem dostave"
+  )
 
   filtered_df = df.copy()
   if odabrana_usluga != "Sve":
@@ -223,9 +264,11 @@ if df is not None:
     filtered_df = filtered_df[filtered_df["Prim-mjesto"] == odabrani_grad]
   if samo_preplaceno:
     filtered_df = filtered_df[filtered_df["Razlika_Preplaceno"] > 0]
+  if samo_kasnjenje and "Status_SLA" in filtered_df.columns:
+    filtered_df = filtered_df[filtered_df["Status_SLA"] == "Kašnjenje"]
 
   # Vizualizacije
-  st.subheader("📊 Vizualna analiza troškova")
+  st.subheader("📊 Vizualna analiza troškova i rokova")
   c1, c2 = st.columns(2)
 
   with c1:
@@ -243,52 +286,50 @@ if df is not None:
       st.plotly_chart(fig1, use_container_width=True)
 
   with c2:
-    st.markdown("**Top 10 gradova po trošku**")
-    if "Prim-mjesto" in df.columns:
-      grad_grp = (
-          df.groupby("Prim-mjesto")["Iznos (bezPDV)"]
-          .sum()
-          .reset_index()
-          .sort_values(by="Iznos (bezPDV)", ascending=False)
-          .head(10)
-      )
+    st.markdown("**Točnost rokova isporuke (SLA status)**")
+    if "Status_SLA" in df.columns:
+      sla_grp = df["Status_SLA"].value_counts().reset_index()
+      sla_grp.columns = ["Status", "Broj"]
       fig2 = px.bar(
-          grad_grp,
-          x="Prim-mjesto",
-          y="Iznos (bezPDV)",
-          labels={"Prim-mjesto": "Grad", "Iznos (bezPDV)": "Iznos (EUR bez PDV)"},
+          sla_grp,
+          x="Status",
+          y="Broj",
+          color="Status",
+          labels={"Status": "SLA Status", "Broj": "Broj pošiljaka"},
       )
-      fig2.update_layout(xaxis_tickangle=-45)
       st.plotly_chart(fig2, use_container_width=True)
 
   # Detaljna tablica revizije
-  st.subheader("📋 Detaljna tablica revizije i usporedbe s cjenikom")
-  st.dataframe(
-      filtered_df[[
-          "Br.rač.",
-          "Dat.rač.",
-          "Usluga-naziv",
-          "Prim-mjesto",
-          "Prim.-pošt.br.",
-          "Vred.osn./količ.",
-          "JM",
-          "Iznos (bezPDV)",
-          "Ugovorna_Cijena",
-          "Razlika_Preplaceno",
-      ]],
-      use_container_width=True,
+  st.subheader(
+      "📋 Detaljna tablica revizije cijena i točnosti rokova isporuke"
   )
+  prikaz_stupaca = [
+      "Br.rač.",
+      "Dat.rač.",
+      "Usluga-naziv",
+      "Prim-mjesto",
+      "Prim.-pošt.br.",
+      "Vred.osn./količ.",
+      "JM",
+      "Iznos (bezPDV)",
+      "Ugovorna_Cijena",
+      "Razlika_Preplaceno",
+  ]
+  if "Radni_Dani_Isporuke" in df.columns:
+    prikaz_stupaca.extend(["Radni_Dani_Isporuke", "Status_SLA"])
 
-  # Export u pravi Excel format (.xlsx) da se stupci ispravno razdvoje
+  st.dataframe(filtered_df[prikaz_stupaca], use_container_width=True)
+
+  # Export u pravi Excel format (.xlsx)
   output = io.BytesIO()
   with pd.ExcelWriter(output, engine="openpyxl") as writer:
-    filtered_df.to_excel(writer, index=False, sheet_name="Revizija")
+    filtered_df.to_excel(writer, index=False, sheet_name="Revizija_i_Rokovi")
   excel_data = output.getvalue()
 
   st.download_button(
-      label="📥 Preuzmi izvještaj revizije (Excel)",
+      label="📥 Preuzmi izvještaj revizije i rokova (Excel)",
       data=excel_data,
-      file_name="intereuropa_revizija_izvjestaj.xlsx",
+      file_name="intereuropa_revizija_cijena_i_rokova.xlsx",
       mime=(
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       ),
