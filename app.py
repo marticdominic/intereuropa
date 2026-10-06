@@ -37,7 +37,7 @@ else:
   try:
     df = load_data("PZ_INV_1_SPECIFIKACIJA_RACUNA(8).xlsx")
     st.sidebar.success("Učitan zadani uzorak računa.")
-  end except Exception:
+  except Exception:
     st.sidebar.info(
         "Molimo učitajte Excel specifikaciju računa u gornjem izborniku."
     )
@@ -158,8 +158,7 @@ def izracunaj_ugovornu_cijenu(row):
     cijena = 2.00  # Ugovorena cijena povrata palete
 
   elif "GORIVO" in usluga:
-    # Dodatak za gorivo se obračunava kao postotak na osnovnu cijenu
-    cijena = 0.0  # Možemo pratiti kroz odstupanje
+    cijena = 0.0
 
   if is_island_or_south and zone_idx == 1:
     cijena = cijena * 1.5  # +50% za otoke/Dubrovačku regiju
@@ -170,7 +169,6 @@ def izracunaj_ugovornu_cijenu(row):
 if df is not None:
   # Izračun ugovornih cijena i razlika za svaku stavku
   df["Ugovorna_Cijena"] = df.apply(izracunaj_ugovornu_cijenu, axis=1)
-  # Usporedba naplaćene i ugovorne cijene (bez PDV-a)
   df["Razlika_Preplaceno"] = df.apply(
       lambda r: (
           r["Iznos (bezPDV)"] - r["Ugovorna_Cijena"]
@@ -197,7 +195,7 @@ if df is not None:
 
   st.markdown("---")
 
-  # Filteri uサイドbar-u
+  # Filteri u sidebar-u
   st.sidebar.header("🔍 Filteri i Revizija")
   usluge = (
       ["Sve"] + list(df["Usluga-naziv"].dropna().unique())
