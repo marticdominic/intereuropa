@@ -4,29 +4,30 @@ import plotly.express as px
 import streamlit as st
 
 st.set_page_config(
-    page_title="Intereuropa - Revizija Računa i Rokova",
+    page_title="Sustav za Kontrolu i Analizu Logističkih Računa",
     page_icon="📦",
     layout="wide",
 )
 
-st.title(
-    "📦 Intereuropa: Revizija Cijena i Kontrola Rokova Isporuke (SLA)"
-)
+st.title("📦 Sustav za Kontrolu i Analizu Logističkih Računa")
 st.write(
-    "Napredna kontrola troškova, ugovornih cijena, rokova isporuke i top gradova"
-    " po troškovima."
+    "Automatska kontrola troškova prijevoza, dodataka za gorivo i dodatnih"
+    " usluga prema ugovornim uvjetima."
 )
 
 # Sidebar za upload
 st.sidebar.header("📁 Uvoz podataka")
 uploaded_file = st.sidebar.file_uploader(
-    "Učitaj Excel specifikaciju računa", type=["xlsx", "xls"]
+    "Učitaj Excel ili CSV tablicu s pošiljkama", type=["xlsx", "xls", "csv"]
 )
 
 
 @st.cache_data
 def load_data(file):
-  df = pd.read_excel(file, header=1)
+  if file.name.endswith(".csv"):
+    df = pd.read_csv(file)
+  else:
+    df = pd.read_excel(file, header=1)
   return df
 
 
@@ -34,14 +35,13 @@ def load_data(file):
 df = None
 if uploaded_file is not None:
   df = load_data(uploaded_file)
+  st.sidebar.success("Tablica uspješno učitana!")
 else:
   try:
     df = load_data("PZ_INV_1_SPECIFIKACIJA_RACUNA(8).xlsx")
     st.sidebar.success("Učitan zadani uzorak računa.")
   except Exception:
-    st.sidebar.info(
-        "Molimo učitajte Excel specifikaciju računa u gornjem izborniku."
-    )
+    st.sidebar.info("Molimo učitajte Excel specifikaciju računa.")
 
 
 # Definicija ugovornih cjenika po zonama
@@ -140,10 +140,10 @@ def izracunaj_ugovornu_cijenu(row):
         if tezina <= th:
           t = th
           break
-        if tezina > thresholds[-1]:
-          base_price = pallet_prices[700][zone_idx]
-          extra_blocks = max(0.0, ((tezina - 700) + 99.99) // 100)
-          cijena = base_price + extra_blocks * pallet_extra_100[zone_idx]
+      if tezina > thresholds[-1]:
+        base_price = pallet_prices[700][zone_idx]
+        extra_blocks = max(0.0, ((tezina - 700) + 99.99) // 100)
+        cijena = base_price + extra_blocks * pallet_extra_100[zone_idx]
     if cijena == 0.0:
       cijena = pallet_prices[t][zone_idx]
 
@@ -194,149 +194,158 @@ if df is not None:
       pb = str(row.get("Prim.-pošt.br.", ""))
       zone_idx = odredi_zonu(pb)
       is_island_or_south = pb.startswith("20")
-
       dozvoljeno_dana = 3 if (is_island_or_south or zone_idx == 2) else 2
-
       st_dani = row.get("Radni_Dani_Isporuke")
       if pd.isna(st_dani):
         return "Nepoznato"
       if st_dani <= dozvoljeno_dana:
-        return "U roku"
+        return f"{int(st_dani)} rad. dana (U roku)"
       else:
-        return "Kašnjenje"
+        return f"{int(st_dani)} rad. dana (Kašnjenje)"
 
     df["Status_SLA"] = df.apply(provjeri_sla, axis=1)
 
-  # Osnovne metrike
-  st.markdown("---")
-  col1, col2, col3, col4 = st.columns(4)
-
-  total_neto = df["Iznos (bezPDV)"].sum()
-  total_ugovor = df["Ugovorna_Cijena"].sum()
-  total_razlika = df[df["Razlika_Preplaceno"] > 0]["Razlika_Preplaceno"].sum()
-
-  kasnjenja_count = (
-      len(df[df["Status_SLA"] == "Kašnjenje"])
-      if "Status_SLA" in df.columns
-      else 0
+  # Gornje Info trake (generiraj izvještaj info)
+  total_posiljaka = len(df)
+  st.markdown(
+      f"📊 **Obrađeno pošiljaka: {total_posiljaka}** | Uspješno učitano"
   )
-
-  col1.metric("Ukupno naplaćeno (bez PDV)", f"{total_neto:,.2f} EUR")
-  col2.metric("Procjena po cjeniku", f"{total_ugovor:,.2f} EUR")
-  col3.metric(
-      "Uočeno preplaćeno", f"{total_razlika:,.2f} EUR", delta_color="inverse"
-  )
-  col4.metric(
-      "Pošiljke s kašnjenjem", f"{kasnjenja_count}", delta_color="inverse"
-  )
-
   st.markdown("---")
 
-  # Filteri u sidebar-u
-  st.sidebar.header("🔍 Filteri i Revizija")
-  usluge = (
-      ["Sve"] + list(df["Usluga-naziv"].dropna().unique())
-      if "Usluga-naziv" in df.columns
-      else []
-  )
-  odabrana_usluga = st.sidebar.selectbox("Filtriraj po usluzi", usluge)
+  # Definiranje tabova (kartica)
+  tab1, tab2, tab3, tab4 = st.tabs([
+      "📊 1. Pregled i Vizuali",
+      "🚚 2. Tranzit i Rokovi",
+      "💰 3. Usporedba Cijena",
+      "📥 4. Preuzimanje Izvještaja",
+  ])
 
-  gradovi = (
-      ["Svi"] + list(df["Prim-mjesto"].dropna().unique())
-      if "Prim-mjesto" in df.columns
-      else []
-  )
-  odabrani_grad = st.sidebar.selectbox("Filtriraj po primatelju (grad)", gradovi)
+  with tab1:
+    st.subheader("Ključni pokazatelji i vizualna analitika")
+    col1, col2, col3 = st.columns(3)
 
-  samo_preplaceno = st.sidebar.checkbox(
-      "Prikaži samo sumnjive / preplaćene stavke"
-  )
-  samo_kasnjenje = st.sidebar.checkbox(
-      "Prikaži samo pošiljke s kašnjenjem dostave"
-  )
+    total_neto = df["Iznos (bezPDV)"].sum()
+    total_ugovor = df["Ugovorna_Cijena"].sum()
+    total_razlika = df[df["Razlika_Preplaceno"] > 0]["Razlika_Preplaceno"].sum()
 
-  filtered_df = df.copy()
-  if odabrana_usluga != "Sve":
-    filtered_df = filtered_df[filtered_df["Usluga-naziv"] == odabrana_usluga]
-  if odabrani_grad != "Svi":
-    filtered_df = filtered_df[filtered_df["Prim-mjesto"] == odabrani_grad]
-  if samo_preplaceno:
-    filtered_df = filtered_df[filtered_df["Razlika_Preplaceno"] > 0]
-  if samo_kasnjenje and "Status_SLA" in filtered_df.columns:
-    filtered_df = filtered_df[filtered_df["Status_SLA"] == "Kašnjenje"]
+    col1.metric("Ukupno naplaćeno (bez PDV)", f"{total_neto:,.2f} EUR")
+    col2.metric("Procjena po cjeniku", f"{total_ugovor:,.2f} EUR")
+    col3.metric(
+        "Uočeno preplaćeno", f"{total_razlika:,.2f} EUR", delta_color="inverse"
+    )
 
-  # Vizualizacije (Troškovi po usluzi i Top 10 gradova po troškovima)
-  st.subheader("📊 Vizualna analiza troškova")
-  c1, c2 = st.columns(2)
+    st.markdown("---")
+    vc1, vc2 = st.columns(2)
 
-  with c1:
-    st.markdown("**Troškovi po vrsti usluge**")
-    if "Usluga-naziv" in df.columns:
-      usluga_grp = (
-          df.groupby("Usluga-naziv")["Iznos (bezPDV)"].sum().reset_index()
+    with vc1:
+      st.markdown("**Troškovi po vrsti usluge**")
+      if "Usluga-naziv" in df.columns:
+        usluga_grp = (
+            df.groupby("Usluga-naziv")["Iznos (bezPDV)"].sum().reset_index()
+        )
+        fig1 = px.pie(
+            usluga_grp,
+            names="Usluga-naziv",
+            values="Iznos (bezPDV)",
+            hole=0.4,
+        )
+        st.plotly_chart(fig1, use_container_width=True)
+
+    with vc2:
+      st.markdown("**Top 10 gradova po ukupnim troškovima**")
+      if "Prim-mjesto" in df.columns:
+        grad_grp = (
+            df.groupby("Prim-mjesto")["Iznos (bezPDV)"]
+            .sum()
+            .reset_index()
+            .sort_values(by="Iznos (bezPDV)", ascending=False)
+            .head(10)
+        )
+        fig2 = px.bar(
+            grad_grp,
+            x="Prim-mjesto",
+            y="Iznos (bezPDV)",
+            color="Iznos (bezPDV)",
+            labels={
+                "Prim-mjesto": "Grad primatelj",
+                "Iznos (bezPDV)": "Ukupno (EUR)",
+            },
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+
+  with tab2:
+    st.subheader("Analiza tranzita pošiljaka i provjera ugovornih rokova isporuke")
+    if "Status_SLA" in df.columns:
+      u_roku_cnt = len(
+          df[df["Status_SLA"].astype(str).str.contains("U roku")]
       )
-      fig1 = px.pie(
-          usluga_grp,
-          names="Usluga-naziv",
-          values="Iznos (bezPDV)",
-          hole=0.4,
+      postotak_u_roku = (
+          (u_roku_cnt / total_posiljaka * 100) if total_posiljaka > 0 else 0
       )
-      st.plotly_chart(fig1, use_container_width=True)
-
-  with c2:
-    st.markdown("**Top 10 gradova po ukupnim troškovima**")
-    if "Prim-mjesto" in df.columns:
-      grad_grp = (
-          df.groupby("Prim-mjesto")["Iznos (bezPDV)"]
-          .sum()
-          .reset_index()
-          .sort_values(by="Iznos (bezPDV)", ascending=False)
-          .head(10)
+      kasnjenje_cnt = len(
+          df[df["Status_SLA"].astype(str).str.contains("Kašnjenje")]
       )
-      fig2 = px.bar(
-          grad_grp,
-          x="Prim-mjesto",
-          y="Iznos (bezPDV)",
-          color="Iznos (bezPDV)",
-          labels={
-              "Prim-mjesto": "Grad primatelj",
-              "Iznos (bezPDV)": "Ukupno (EUR)",
-          },
+
+      sc1, sc2, sc3 = st.columns(3)
+      sc1.metric(
+          "Uredno isporučeno u roku",
+          f"{postotak_u_roku:.1f}%",
+          f"↑ {u_roku_cnt} pošiljaka",
       )
-      st.plotly_chart(fig2, use_container_width=True)
+      sc2.metric(
+          "Izvan ugovornog roka (Kašnjenje)",
+          f"{kasnjenje_cnt}",
+          delta_color="inverse",
+      )
+      sc3.metric("Ukupno analizirano pošiljaka s datumima", f"{total_posiljaka}")
 
-  # Detaljna tablica revizije
-  st.subheader(
-      "📋 Detaljna tablica revizije cijena i točnosti rokova isporuke"
-  )
-  prikaz_stupaca = [
-      "Br.rač.",
-      "Dat.rač.",
-      "Usluga-naziv",
-      "Prim-mjesto",
-      "Prim.-pošt.br.",
-      "Vred.osn./količ.",
-      "JM",
-      "Iznos (bezPDV)",
-      "Ugovorna_Cijena",
-      "Razlika_Preplaceno",
-  ]
-  if "Radni_Dani_Isporuke" in df.columns:
-    prikaz_stupaca.extend(["Radni_Dani_Isporuke", "Status_SLA"])
+    st.markdown("---")
+    prikaz_tranzit = [
+        "Br.rač.",
+        "Usluga-naziv",
+        "Prim-mjesto",
+        "Prim.-pošt.br.",
+        "Zona",
+        "Odlazak",
+        "Dostava",
+        "Radni_Dani_Isporuke",
+        "Status_SLA",
+    ]
+    st.dataframe(
+        df[[c for c in prikaz_tranzit if c in df.columns]],
+        use_container_width=True,
+    )
 
-  st.dataframe(filtered_df[prikaz_stupaca], use_container_width=True)
+  with tab3:
+    st.subheader("Usporedba naplaćenih i ugovornih cijena (Revizija)")
+    prikaz_cijene = [
+        "Br.rač.",
+        "Dat.rač.",
+        "Usluga-naziv",
+        "Prim-mjesto",
+        "Vred.osn./količ.",
+        "JM",
+        "Iznos (bezPDV)",
+        "Ugovorna_Cijena",
+        "Razlika_Preplaceno",
+    ]
+    st.dataframe(
+        df[[c for c in prikaz_cijene if c in df.columns]],
+        use_container_width=True,
+    )
 
-  # Export u Excel format
-  output = io.BytesIO()
-  with pd.ExcelWriter(output, engine="openpyxl") as writer:
-    filtered_df.to_excel(writer, index=False, sheet_name="Revizija_i_Rokovi")
-  excel_data = output.getvalue()
+  with tab4:
+    st.subheader("Preuzimanje cjelovitog izvještaja u Excel formatu")
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+      df.to_excel(writer, index=False, sheet_name="Revizija_i_Rokovi")
+    excel_data = output.getvalue()
 
-  st.download_button(
-      label="📥 Preuzmi izvještaj revizije i rokova (Excel)",
-      data=excel_data,
-      file_name="intereuropa_revizija_cijena_i_rokova.xlsx",
-      mime=(
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-      ),
-  )
+    st.download_button(
+        label="📥 Preuzmi izvještaj revizije (Excel)",
+        data=excel_data,
+        file_name="intereuropa_revizija_cijena_i_rokova.xlsx",
+        mime=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+    )
