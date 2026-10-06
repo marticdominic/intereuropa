@@ -77,11 +77,13 @@ if df is not None:
   if odabrani_grad != "Svi":
     filtered_df = filtered_df[filtered_df["Prim-mjesto"] == odabrani_grad]
 
-  # Grafovi
-  col_g1, col_g2 = st.columns(2)
+  # Vizualizacije - svaka u svom odvojenom dijelu za stabilan prikaz
+  st.subheader("📊 Analiza troškova")
 
-  with col_g1:
-    st.subheader("Troškovi po vrsti usluge")
+  c1, c2 = st.columns(2)
+
+  with c1:
+    st.markdown("**Troškovi po vrsti usluge**")
     if "Usluga-naziv" in df.columns:
       usluga_grp = (
           df.groupby("Usluga-naziv")["Iznos (bezPDV)"].sum().reset_index()
@@ -94,8 +96,8 @@ if df is not None:
       )
       st.plotly_chart(fig1, use_container_width=True)
 
-  with col_g2:
-    st.subheader("Top 10 gradova po trošku")
+  with c2:
+    st.markdown("**Top 10 gradova po trošku**")
     if "Prim-mjesto" in df.columns:
       grad_grp = (
           df.groupby("Prim-mjesto")["Iznos (bezPDV)"]
@@ -104,3 +106,25 @@ if df is not None:
           .sort_values(by="Iznos (bezPDV)", ascending=False)
           .head(10)
       )
+      fig2 = px.bar(
+          grad_grp,
+          x="Prim-mjesto",
+          y="Iznos (bezPDV)",
+          text_auto=".2f",
+          labels={"Prim-mjesto": "Grad", "Iznos (bezPDV)": "Iznos (EUR bez PDV)"},
+      )
+      fig2.update_layout(xaxis_tickangle=-45)
+      st.plotly_chart(fig2, use_container_width=True)
+
+  # Tablica podataka
+  st.subheader("📋 Pregled stavki računa")
+  st.dataframe(filtered_df, use_container_width=True)
+
+  # Export u CSV
+  csv = filtered_df.to_csv(index=False).encode("utf-8")
+  st.download_button(
+      label="📥 Preuzmi filtrirane podatke (CSV)",
+      data=csv,
+      file_name="intereuropa_analiza.csv",
+      mime="text/csv",
+  )
