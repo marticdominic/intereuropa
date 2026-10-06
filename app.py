@@ -217,12 +217,13 @@ if df is not None:
   )
   st.markdown("---")
 
-  # Definiranje tabova (kartica)
-  tab1, tab2, tab3, tab4 = st.tabs([
+  # Definiranje tabova (kartica) – dodan peti tab
+  tab1, tab2, tab3, tab4, tab5 = st.tabs([
       "📊 1. Pregled i Vizuali",
       "🚚 2. Tranzit i Rokovi",
       "💰 3. Usporedba Cijena",
       "📥 4. Preuzimanje Izvještaja",
+      "⚠️ 5. Stavke s Razlikama",
   ])
 
   with tab1:
@@ -344,11 +345,45 @@ if df is not None:
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
       df.to_excel(writer, index=False, sheet_name="Revizija_i_Rokovi")
+      # Dodavanje zasebnog sheet-a samo za stavke s razlikama (preplaćeno > 0)
+      df_diff_export = df[df["Razlika_Preplaceno"] > 0]
+      df_diff_export.to_excel(writer, index=False, sheet_name="Samo_Razlike")
+
     excel_data = output.getvalue()
 
     st.download_button(
-        label="📥 Preuzmi izvještaj revizije (Excel)",
+        label="📥 Preuzmi izvještaj revizije (Excel sa sheetom za razlike)",
         data=excel_data,
         file_name="intereuropa_revizija_cijena_i_rokova.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+  with tab5:
+    st.subheader("⚠️️ Stavke s utvrđenim razlikama (Preplaćeni iznosi)")
+    df_samo_razlike = df[df["Razlika_Preplaceno"] > 0].sort_values(
+        by="Razlika_Preplaceno", ascending=False
+    )
+
+    if len(df_samo_razlike) > 0:
+      st.warning(
+          f"Pronađeno je **{len(df_samo_razlike)}** stavki kod kojih je"
+          f" naplaćeni iznos veći od ugovorenog! Ukupno preplaćeno:"
+          f" **{df_samo_razlike['Razlika_Preplaceno'].sum():,.2f} EUR**"
+      )
+      prikaz_razlike = [
+          "Br.rač.",
+          "Dat.rač.",
+          "Usluga-naziv",
+          "Prim-mjesto",
+          "Vred.osn./količ.",
+          "JM",
+          "Iznos (bezPDV)",
+          "Ugovorna_Cijena",
+          "Razlika_Preplaceno",
+      ]
+      st.dataframe(
+          df_samo_razlike[[c for c in prikaz_razlike if c in df_samo_razlike.columns]],
+          use_container_width=True,
+      )
+    else:
+      st.success("Nema pronađenih stavki s preplaćenim iznosima!")
