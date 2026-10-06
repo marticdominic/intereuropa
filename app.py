@@ -100,7 +100,7 @@ def odredi_zonu(postanski_broj):
 
 
 def izracunaj_ugovornu_cijenu(row):
-  usluga = str(row.get("Usluga-naziv", ""))
+  usluga = str(row.get("Usluga-naziv", "")).upper()
   tezina = row.get("Vred.osn./količ.", 0)
   try:
     tezina = float(tezina)
@@ -113,7 +113,12 @@ def izracunaj_ugovornu_cijenu(row):
 
   cijena = 0.0
 
-  if "EXPRESS" in usluga or "PAKET" in usluga or "PRIJEVOZ" in usluga:
+  # Prepoznavanje vraćanja paleta (fiksno 2.00 EUR po komadu/količini)
+  if "VRAĆANJE" in usluga and "PALET" in usluga:
+    kolicina = tezina if tezina > 0 else 1.0
+    return round(2.00 * kolicina, 2)
+
+  elif "EXPRESS" in usluga or "PAKET" in usluga or "PRIJEVOZ" in usluga:
     thresholds = sorted(package_prices.keys())
     if tezina <= thresholds[0]:
       t = thresholds[0]
@@ -147,12 +152,10 @@ def izracunaj_ugovornu_cijenu(row):
     if cijena == 0.0:
       cijena = pallet_prices[t][zone_idx]
 
-  elif "VRAĆANJE PALET" in usluga:
-    cijena = 2.00
   elif "GORIVO" in usluga:
     cijena = 0.0
 
-  if is_island_or_south and zone_idx == 1:
+  if is_island_or_south and zone_idx == 1 and not ("VRAĆANJE" in usluga):
     cijena = cijena * 1.5
 
   return round(cijena, 2)
@@ -181,6 +184,7 @@ if df is not None:
           r["Iznos (bezPDV)"] - r["Ugovorna_Cijena"]
           if "PRIJEVOZ" in str(r.get("Usluga-naziv", ""))
           or "PALET" in str(r.get("Usluga-naziv", ""))
+          or "VRAĆANJE" in str(r.get("Usluga-naziv", ""))
           else 0
       ),
       axis=1,
@@ -205,7 +209,7 @@ if df is not None:
 
     df["Status_SLA"] = df.apply(provjeri_sla, axis=1)
 
-  # Gornje Info trake (generiraj izvještaj info)
+  # Gornje Info trake
   total_posiljaka = len(df)
   st.markdown(
       f"📊 **Obrađeno pošiljaka: {total_posiljaka}** | Uspješno učitano"
@@ -343,9 +347,3 @@ if df is not None:
 
     st.download_button(
         label="📥 Preuzmi izvještaj revizije (Excel)",
-        data=excel_data,
-        file_name="intereuropa_revizija_cijena_i_rokova.xlsx",
-        mime=(
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        ),
-    )
