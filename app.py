@@ -347,3 +347,7 @@ if df is not None:
 
     st.download_button(
         label="📥 Preuzmi izvještaj revizije (Excel)",
+        data=excel_data,
+        file_name="intereuropa_revizija_cijena_i_rokova.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
