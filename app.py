@@ -1,3 +1,4 @@
+import io
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -278,11 +279,12 @@ if df is not None:
       use_container_width=True,
   )
 
-  # Export u CSV
-  csv = filtered_df.to_csv(index=False).encode("utf-8")
+  # Export u pravi Excel format (.xlsx) da se stupci ispravno razdvoje
+  output = io.BytesIO()
+  with pd.ExcelWriter(output, engine="openpyxl") as writer:
+    filtered_df.to_excel(writer, index=False, sheet_name="Revizija")
+  excel_data = output.getvalue()
+
   st.download_button(
-      label="📥 Preuzmi izvještaj revizije (CSV)",
-      data=csv,
-      file_name="intereuropa_revizija_izvjestaj.csv",
-      mime="text/csv",
-  )
+      label="📥 Preuzmi izvještaj revizije (Excel)",
+      data=
