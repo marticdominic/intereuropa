@@ -113,8 +113,8 @@ def izracunaj_ugovornu_cijenu(row):
 
   cijena = 0.0
 
-  # Prepoznavanje vraćanja paleta (fiksno 2.00 EUR po komadu/količini)
-  if "VRAĆANJE" in usluga and "PALET" in usluga:
+  # APSOLUTNI PRIORITET: Vraćanje paleta je uvijek fiksno 2.00 EUR po komadu
+  if "VRAĆANJE" in usluga or "VRAČANJE" in usluga:
     kolicina = tezina if tezina > 0 else 1.0
     return round(2.00 * kolicina, 2)
 
@@ -185,6 +185,7 @@ if df is not None:
           if "PRIJEVOZ" in str(r.get("Usluga-naziv", ""))
           or "PALET" in str(r.get("Usluga-naziv", ""))
           or "VRAĆANJE" in str(r.get("Usluga-naziv", ""))
+          or "VRAČANJE" in str(r.get("Usluga-naziv", ""))
           else 0
       ),
       axis=1,
