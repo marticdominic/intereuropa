@@ -267,4 +267,68 @@ if df is not None:
 
   # Vizualizacije
   st.subheader("📊 Vizualna analiza troškova i rokova")
-  c1, c2 = st.columns(
+  c1, c2 = st.columns(2)
+
+  with c1:
+    st.markdown("**Troškovi po vrsti usluge**")
+    if "Usluga-naziv" in df.columns:
+      usluga_grp = (
+          df.groupby("Usluga-naziv")["Iznos (bezPDV)"].sum().reset_index()
+      )
+      fig1 = px.pie(
+          usluga_grp,
+          names="Usluga-naziv",
+          values="Iznos (bezPDV)",
+          hole=0.4,
+      )
+      st.plotly_chart(fig1, use_container_width=True)
+
+  with c2:
+    st.markdown("**Točnost rokova isporuke (SLA status)**")
+    if "Status_SLA" in df.columns:
+      sla_grp = df["Status_SLA"].value_counts().reset_index()
+      sla_grp.columns = ["Status", "Broj"]
+      fig2 = px.bar(
+          sla_grp,
+          x="Status",
+          y="Broj",
+          color="Status",
+          labels={"Status": "SLA Status", "Broj": "Broj pošiljaka"},
+      )
+      st.plotly_chart(fig2, use_container_width=True)
+
+  # Detaljna tablica revizije
+  st.subheader(
+      "📋 Detaljna tablica revizije cijena i točnosti rokova isporuke"
+  )
+  prikaz_stupaca = [
+      "Br.rač.",
+      "Dat.rač.",
+      "Usluga-naziv",
+      "Prim-mjesto",
+      "Prim.-pošt.br.",
+      "Vred.osn./količ.",
+      "JM",
+      "Iznos (bezPDV)",
+      "Ugovorna_Cijena",
+      "Razlika_Preplaceno",
+  ]
+  if "Radni_Dani_Isporuke" in df.columns:
+    prikaz_stupaca.extend(["Radni_Dani_Isporuke", "Status_SLA"])
+
+  st.dataframe(filtered_df[prikaz_stupaca], use_container_width=True)
+
+  # Export u Excel format
+  output = io.BytesIO()
+  with pd.ExcelWriter(output, engine="openpyxl") as writer:
+    filtered_df.to_excel(writer, index=False, sheet_name="Revizija_i_Rokovi")
+  excel_data = output.getvalue()
+
+  st.download_button(
+      label="📥 Preuzmi izvještaj revizije i rokova (Excel)",
+      data=excel_data,
+      file_name="intereuropa_revizija_cijena_i_rokova.xlsx",
+      mime=(
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      ),
+  )
