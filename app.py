@@ -21,7 +21,6 @@ uploaded_file = st.sidebar.file_uploader(
 
 @st.cache_data
 def load_data(file):
-  # Preskačemo prvi red zaglavlja prema strukturi Intereuropa Excela
   df = pd.read_excel(file, header=1)
   return df
 
@@ -105,4 +104,3 @@ if df is not None:
           .sort_values(by="Iznos (bezPDV)", ascending=False)
           .head(10)
       )
-      fig2 = px.bar(
