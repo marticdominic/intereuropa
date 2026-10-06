@@ -4,7 +4,7 @@ import plotly.express as px
 import streamlit as st
 
 st.set_page_config(
-    page_title="Intereuropa - Revizija i Analiza Računa i Rokova",
+    page_title="Intereuropa - Revizija Računa i Rokova",
     page_icon="📦",
     layout="wide",
 )
@@ -13,8 +13,8 @@ st.title(
     "📦 Intereuropa: Revizija Cijena i Kontrola Rokova Isporuke (SLA)"
 )
 st.write(
-    "Napredna kontrola troškova, ugovornih cijena i točnosti rokova isporuke"
-    " prema zonama."
+    "Napredna kontrola troškova, ugovornih cijena, rokova isporuke i top gradova"
+    " po troškovima."
 )
 
 # Sidebar za upload
@@ -265,8 +265,8 @@ if df is not None:
   if samo_kasnjenje and "Status_SLA" in filtered_df.columns:
     filtered_df = filtered_df[filtered_df["Status_SLA"] == "Kašnjenje"]
 
-  # Vizualizacije
-  st.subheader("📊 Vizualna analiza troškova i rokova")
+  # Vizualizacije (Troškovi po usluzi i Top 10 gradova po troškovima)
+  st.subheader("📊 Vizualna analiza troškova")
   c1, c2 = st.columns(2)
 
   with c1:
@@ -284,16 +284,24 @@ if df is not None:
       st.plotly_chart(fig1, use_container_width=True)
 
   with c2:
-    st.markdown("**Točnost rokova isporuke (SLA status)**")
-    if "Status_SLA" in df.columns:
-      sla_grp = df["Status_SLA"].value_counts().reset_index()
-      sla_grp.columns = ["Status", "Broj"]
+    st.markdown("**Top 10 gradova po ukupnim troškovima**")
+    if "Prim-mjesto" in df.columns:
+      grad_grp = (
+          df.groupby("Prim-mjesto")["Iznos (bezPDV)"]
+          .sum()
+          .reset_index()
+          .sort_values(by="Iznos (bezPDV)", ascending=False)
+          .head(10)
+      )
       fig2 = px.bar(
-          sla_grp,
-          x="Status",
-          y="Broj",
-          color="Status",
-          labels={"Status": "SLA Status", "Broj": "Broj pošiljaka"},
+          grad_grp,
+          x="Prim-mjesto",
+          y="Iznos (bezPDV)",
+          color="Iznos (bezPDV)",
+          labels={
+              "Prim-mjesto": "Grad primatelj",
+              "Iznos (bezPDV)": "Ukupno (EUR)",
+          },
       )
       st.plotly_chart(fig2, use_container_width=True)
 
